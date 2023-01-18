@@ -1,53 +1,7 @@
 import React from "react";
 import { v4 } from "uuid";
 
-/*
-    API Service class - could for example be created by using OpenAPI Generator
-*/
-
-class ApiService {
-  public getData(type: string, value: number): Promise<any> {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        resolve({ type, data: "Hello World" });
-      }, 3000);
-    });
-  }
-
-  public getUsers(type: string): Promise<any> {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        resolve({ type, data: "Hello World" });
-      }, 3000);
-    });
-  }
-}
-
-/*
-    Some type definitions to make using the API service more typesafe
-*/
-
-type ApiEndpoints = {
-  [K in keyof ApiService]: {
-    argumentsType: Parameters<ApiService[K]>;
-    returnType: ReturnType<ApiService[K]>;
-  };
-};
-
-type ApiEndpointNames = keyof ApiEndpoints;
-
-enum ApiRequestState {
-  PENDING = "pending",
-  FULFILLED = "fulfilled",
-  REJECTED = "rejected",
-  IDLE = "idle",
-}
-
-type ApiCallState<L> = {
-  state: ApiRequestState;
-  result: L | null;
-  error?: string;
-};
+import { ApiService, ApiCallState, ApiRequestState, ApiEndpointNames, ApiEndpoints } from "../api/services";
 
 /*
     Types for actions that can be performed on a widget - those could be located in the widget's title bar
@@ -100,7 +54,7 @@ export type WidgetActions = {
 type WidgetActionsWithTypes = {
   [K in keyof WidgetActions]: WidgetActions[K] & { type: K };
 };
-type WidgetAction = WidgetActionsWithTypes[keyof WidgetActionsWithTypes];
+export type WidgetAction = WidgetActionsWithTypes[keyof WidgetActionsWithTypes];
 
 /*
     Base class for a custom Webviz widget
@@ -154,7 +108,7 @@ class StateStore<S extends WidgetState> {
 }
 
 export type WidgetContext<S extends WidgetState> = {
-    useApiEndpoint: <K extends ApiEndpointNames, L>(endpointName: K, ...args: ApiEndpoints[K]["argumentsType"]) => ApiCallState<L>;
+    useApiEndpoint: <K extends ApiEndpointNames, L>(endpointName: K, condition: boolean, ...args: ApiEndpoints[K]["argumentsType"]) => ApiCallState<L>;
     useState: <K extends keyof S>(name: K) => S[K];
     setState: <K extends keyof S>(name: K, value: S[K]) => void;
 };
@@ -256,10 +210,12 @@ export class WebvizWidgetBase<S extends WidgetState> implements IWebvizWidget {
 
   protected useApiEndpoint(): <K extends ApiEndpointNames, L>(
     endpoint: K,
+    condition: boolean,
     ...args: ApiEndpoints[K]["argumentsType"]
   ) => ApiCallState<L> {
     return <K extends ApiEndpointNames, L>(
       endpoint: K,
+      condition = true,
       ...args: ApiEndpoints[K]["argumentsType"]
     ) => {
       const [state, setState] = React.useState<ApiCallState<L>>({
@@ -269,6 +225,9 @@ export class WebvizWidgetBase<S extends WidgetState> implements IWebvizWidget {
       });
 
       React.useEffect(() => {
+        if (!condition) {
+          return;
+        }
         setState(prevState => ({...prevState, state: ApiRequestState.PENDING, result: null, error: undefined}));
         // @ts-ignore
         const promise = this.apiService[endpoint](...args);
@@ -281,7 +240,7 @@ export class WebvizWidgetBase<S extends WidgetState> implements IWebvizWidget {
           });
         // @ts-ignore
         // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [endpoint].concat(args));
+      }, [endpoint, condition].concat(args));
 
       return state;
     };
@@ -306,77 +265,6 @@ export class WebvizWidgetBase<S extends WidgetState> implements IWebvizWidget {
         }, [name]);
 
         return state;
-    };
-  }
-}
-
-/*
-    A simple test implementation of a custom Webviz widget
-*/
-
-type TestWidgetStates = {
-  selectedNumber: number;
-  testmode: boolean;
-};
-
-export class TestWidget extends WebvizWidgetBase<TestWidgetStates> implements IWebvizWidget {
-  constructor() {
-    super("Test Widget", {
-      selectedNumber: 1,
-      testmode: false,
-    });
-    this.addAction({
-      type: WidgetActionType.TOGGLE,
-      shortcut: "Ctrl+T",
-      tooltip: "Toggle test mode",
-      onToggle: () => {
-        this.setState("testmode", !this.getState("testmode"));
-      },
-      icon: "EdsTest",
-    });
-  }
-
-  protected viewContent(widget: WidgetContext<TestWidgetStates>): () => React.ReactElement {
-    return (): React.ReactElement => {
-      const data = widget.useApiEndpoint("getData", "test", 1);
-      const testmode = widget.useState("testmode");
-      const myNumber = widget.useState("selectedNumber");
-
-      if (testmode) {
-        return <div>Test mode</div>;
-      }
-
-      if (data.state === ApiRequestState.IDLE) {
-        return <div>No request sent yet</div>;
-      }
-
-      if (data.state === ApiRequestState.PENDING) {
-        return <div>Loading...</div>;
-      }
-
-      if (data.state === ApiRequestState.REJECTED) {
-        return <div>Error</div>;
-      }
-
-      return <div>Yeah, results!<br />Btw, your number is {myNumber}...</div>;
-    };
-  }
-
-  protected settingsContent(widget: WidgetContext<TestWidgetStates>): () => React.ReactElement {
-    return (): React.ReactElement  => {
-        const myNumber = widget.useState("selectedNumber");
-      const handleNumberChange = (
-        event: React.ChangeEvent<HTMLInputElement>
-      ) => {
-        widget.setState("selectedNumber", Number(event.target.value));
-      };
-      return (
-        <input
-          type="number"
-          value={myNumber}
-          onChange={handleNumberChange}
-        />
-      );
     };
   }
 }

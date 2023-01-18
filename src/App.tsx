@@ -1,5 +1,5 @@
 import React from 'react';
-import { TestWidget } from './Widget';
+import { TestWidget } from './widgets/TestWidget';
 import './App.css';
 
 const testWidget = new TestWidget();
