@@ -67,6 +67,14 @@ export type WidgetAction = WidgetActionsWithTypes[keyof WidgetActionsWithTypes];
 
 */
 
+enum DataProcessorState { 
+  IDLE = "idle",
+  PENDING = "pending",
+  REJECTED = "rejected",
+  RESOLVED = "resolved",
+}
+type DataProcessor<Data> = () => { state: DataProcessorState; errorMessage?: string; data: Data | null };
+
 type WidgetState = {
   [key: string]: unknown;
 };
@@ -267,4 +275,26 @@ export class WebvizWidgetBase<S extends WidgetState> implements IWebvizWidget {
         return state;
     };
   }
+
+  protected useDataPreprocessor(): <K extends keyof InstanceType<typeof WebvizWidgetBase>>(preprocessor: (...args: Parameters<this[K]>) => ReturnType<this[K]>, ...args: Parameters<this[K]>) => DataProcessor<ReturnType<this[K]>> {
+    return <K extends keyof InstanceType<typeof WebvizWidgetBase>>(preprocessor: (...args: Parameters<this[K]>) => ReturnType<this[K]>, ...args: Parameters<this[K]>): DataProcessor<ReturnType<this[K]>> => {
+      const [state, setState] = React.useState<DataProcessor<ReturnType<this[K]>>>({
+        state: DataProcessorState.IDLE,
+        data: null,
+      });
+
+      React.useEffect(() => {
+       const promise = new Promise<ReturnType<this[K]>>((resolve, reject) => {
+            const result = preprocessor(...args);
+            resolve(result);
+      }).then((data: ReturnType<this[K]>) => {
+        setState(prevState => ({...prevState, state: DataProcessorState.RESOLVED, data}));
+      }).catch((error: any) => {
+        setState(prevState => ({...prevState, state: DataProcessorState.REJECTED, data: null}));
+      });
+    }, [preprocessor, ...args]);
+
+    return state;
+  }
 }
+
